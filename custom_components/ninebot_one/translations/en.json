@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a Ninebot One",
+        "data": {
+          "address": "Wheel",
+          "name": "Name"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This wheel is already configured",
+      "no_devices_found": "No connectable wheels found. Power the wheel on near a Bluetooth proxy and try again."
+    }
+  }
+}
