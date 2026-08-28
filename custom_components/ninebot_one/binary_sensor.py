@@ -12,6 +12,9 @@ from .coordinator import NinebotConfigEntry, NinebotCoordinator
 from .entity import NinebotEntity
 
 CHARGING_CURRENT_THRESHOLD = -0.1
+# A battery-% rise at standstill within this window also counts as charging
+# (current readings fluctuate around zero on some wheels/chargers).
+RISE_WINDOW_SECONDS = 900
 
 
 async def async_setup_entry(
@@ -52,9 +55,17 @@ class NinebotChargingSensor(NinebotEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        state = self.coordinator.state
-        if not self.coordinator.connected or state.current is None:
+        coord = self.coordinator
+        state = coord.state
+        if not coord.connected:
             return False
-        return (
-            state.current < CHARGING_CURRENT_THRESHOLD and (state.speed or 0.0) < 1.0
+        current_draw = (
+            state.current is not None
+            and state.current < CHARGING_CURRENT_THRESHOLD
+            and (state.speed or 0.0) < 1.0
         )
+        recent_rise = (
+            coord.last_charge_rise > 0
+            and coord.hass.loop.time() - coord.last_charge_rise < RISE_WINDOW_SECONDS
+        )
+        return current_draw or recent_rise

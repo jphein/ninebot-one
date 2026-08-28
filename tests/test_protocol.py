@@ -119,3 +119,29 @@ def test_zero_live():
     assert dec.state.speed == 0.0
     assert dec.state.current == 0.0
     assert dec.state.battery == 87
+
+
+def test_segmented_live_data_fw425():
+    from protocol import (
+        PARAM_LIVE_BATT_SPEED,
+        PARAM_LIVE_DISTANCE,
+        PARAM_LIVE_TEMP,
+        PARAM_LIVE_VOLT_CURR,
+    )
+    dec = NinebotDecoder()
+    p = bytearray(6); p[2:4] = (91).to_bytes(2, "little"); p[4:6] = (12300).to_bytes(2, "little")
+    assert dec.handle_notification(make_response(PARAM_LIVE_BATT_SPEED, bytes(p)))
+    p = bytearray(6); p[2:6] = (2345678).to_bytes(4, "little")
+    assert dec.handle_notification(make_response(PARAM_LIVE_DISTANCE, bytes(p)))
+    p = bytearray(6); p[4:6] = (312).to_bytes(2, "little")
+    assert dec.handle_notification(make_response(PARAM_LIVE_TEMP, bytes(p)))
+    p = bytearray(4); p[0:2] = (5980).to_bytes(2, "little"); p[2:4] = (65536 - 250).to_bytes(2, "little")
+    assert dec.handle_notification(make_response(PARAM_LIVE_VOLT_CURR, bytes(p)))
+    st = dec.state
+    assert st.battery == 91
+    assert st.speed == 12.3
+    assert st.total_distance == 2345.678
+    assert st.temperature == 31.2
+    assert st.voltage == 59.8
+    assert st.current == -2.5
+    assert st.power == round(59.8 * -2.5, 1)

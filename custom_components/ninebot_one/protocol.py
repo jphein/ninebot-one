@@ -32,6 +32,12 @@ PARAM_SERIAL2 = 0x13
 PARAM_SERIAL3 = 0x16
 PARAM_FIRMWARE = 0x1A
 PARAM_LIVE_DATA = 0xB0
+# Newer firmwares (seen on One E fw 4.2.5) answer the live-data poll with
+# segmented frames instead of one 32-byte block (WheelLog's LiveData2..6):
+PARAM_LIVE_BATT_SPEED = 0xB3
+PARAM_LIVE_DISTANCE = 0xB6
+PARAM_LIVE_TEMP = 0xB9
+PARAM_LIVE_VOLT_CURR = 0xBC
 
 
 def _u16le(buf: bytes, off: int) -> int:
@@ -164,6 +170,20 @@ class NinebotDecoder:
             st.temperature = round(_u16le(p, 22) / 10.0, 1)
             st.voltage = round(_u16le(p, 24) / 100.0, 2)
             st.current = round(_s16le(p, 26) / 100.0, 2)
+            return True
+        if frame.param == PARAM_LIVE_BATT_SPEED and len(frame.payload) >= 6:
+            st.battery = _u16le(frame.payload, 2)
+            st.speed = round(_u16le(frame.payload, 4) / 1000.0, 2)
+            return True
+        if frame.param == PARAM_LIVE_DISTANCE and len(frame.payload) >= 6:
+            st.total_distance = round(_u32le(frame.payload, 2) / 1000.0, 3)
+            return True
+        if frame.param == PARAM_LIVE_TEMP and len(frame.payload) >= 6:
+            st.temperature = round(_u16le(frame.payload, 4) / 10.0, 1)
+            return True
+        if frame.param == PARAM_LIVE_VOLT_CURR and len(frame.payload) >= 4:
+            st.voltage = round(_u16le(frame.payload, 0) / 100.0, 2)
+            st.current = round(_s16le(frame.payload, 2) / 100.0, 2)
             return True
         if frame.param in (PARAM_SERIAL, PARAM_SERIAL2, PARAM_SERIAL3):
             self._serial_parts[frame.param] = frame.payload

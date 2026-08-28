@@ -71,6 +71,10 @@ class NinebotCoordinator(DataUpdateCoordinator[WheelState]):
         self._reconnect_handle: asyncio.TimerHandle | None = None
         self._stopped = False
         self._unsub_bluetooth: Callable[[], None] | None = None
+        # Battery-rise tracking: charging detection can't rely on the current
+        # sign alone (it fluctuates around zero on some wheels/chargers).
+        self.last_charge_rise: float = 0.0
+        self._last_battery: int | None = None
         self.async_set_updated_data(self.decoder.state)
 
     @property
@@ -173,11 +177,21 @@ class NinebotCoordinator(DataUpdateCoordinator[WheelState]):
     def _notification_handler(
         self, _char: BleakGATTCharacteristic, data: bytearray
     ) -> None:
+        _LOGGER.debug("rx %s", bytes(data).hex())
         st = self.state
         had_identity = st.serial is not None and st.firmware is not None
         if self.decoder.handle_notification(bytes(data)):
             if not had_identity and st.serial and st.firmware:
                 self._update_device_registry()
+            if (
+                st.battery is not None
+                and self._last_battery is not None
+                and st.battery > self._last_battery
+                and (st.speed or 0.0) < 1.0
+            ):
+                self.last_charge_rise = self.hass.loop.time()
+            if st.battery is not None:
+                self._last_battery = st.battery
             self.async_set_updated_data(st)
 
     def _update_device_registry(self) -> None:
