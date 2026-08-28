@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import NinebotConfigEntry, NinebotCoordinator
 from .entity import NinebotEntity
 
-CHARGING_CURRENT_THRESHOLD = -0.3
+CHARGING_CURRENT_THRESHOLD = -0.1
 
 
 async def async_setup_entry(
