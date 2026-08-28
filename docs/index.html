@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ninebot One — live telemetry in Home Assistant</title>
+<meta name="description" content="A custom Home Assistant integration for the Ninebot One E/E+ electric unicycle — battery, voltage, current, speed and odometer over BLE through your ESPHome proxies. No phone app.">
+<link rel="canonical" href="https://jphein.github.io/ninebot-one/">
+<!-- Open Graph / Twitter — rich share previews (summary card; no raster og-card yet) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ninebot-one">
+<meta property="og:url" content="https://jphein.github.io/ninebot-one/">
+<meta property="og:title" content="A classic electric unicycle, live in Home Assistant">
+<meta property="og:description" content="Battery, voltage, current, speed and odometer from a Ninebot One E+ over Bluetooth — polled registers through ESPHome BLE proxies, decoded in a small custom integration. No phone app.">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="A classic electric unicycle, live in Home Assistant">
+<meta name="twitter:description" content="Ninebot One E/E+ telemetry over BLE proxies: a polled, checksummed serial protocol decoded into HA sensors — battery %, voltage, odometer and a charging heuristic that actually works.">
+<!-- inline SVG favicon: a unicycle wheel with a lit battery cell -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='19' r='10' fill='none' stroke='%23f5a623' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='19' r='2.2' fill='%23f5a623'/%3E%3Cpath d='M16 9V3M12 3h8' stroke='%2343d17a' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='13' y='16.5' width='6' height='5' rx='1' fill='%2343d17a' opacity='.85'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0b0e14; --bg2:#11151f; --card:#141926; --line:#232a3a;
+    --fg:#e8ecf4; --muted:#9aa6bd; --accent:#f5a623; --accent2:#43d17a; --link:#7aa2f7;
+    --shadow:0 8px 30px rgba(0,0,0,.45);
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f6f7fb; --bg2:#eef1f7; --card:#ffffff; --line:#e2e6ef;
+      --fg:#1a2030; --muted:#5b667e; --accent:#d98209; --accent2:#1f9d57; --link:#2d5bd0;
+      --shadow:0 8px 30px rgba(20,30,60,.10);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--fg);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 20px}
+  code{background:color-mix(in srgb,var(--fg) 10%,transparent);padding:.12em .4em;border-radius:5px;
+    font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+    overflow-x:auto;box-shadow:var(--shadow)}
+  pre code{background:none;padding:0}
+
+  header.hero{padding:64px 0 40px;text-align:center}
+  .badge{display:inline-block;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);
+    border-radius:999px;padding:5px 13px;margin-bottom:20px}
+  h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.08;margin:.1em 0 .3em;letter-spacing:-.02em}
+  h1 .grad{background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:clamp(1rem,2.2vw,1.22rem);color:var(--muted);max-width:640px;margin:0 auto 26px}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-block;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px;
+    border:1px solid var(--line)}
+  .btn.primary{background:linear-gradient(90deg,var(--accent),#ffbf50);color:#20160a;border:none}
+  .btn.ghost{background:var(--card);color:var(--fg)}
+  /* share buttons */
+  .share-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+  .btn.share{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;
+    background:var(--card);color:var(--fg);border:1px solid var(--line);cursor:pointer}
+  .btn.share:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.share svg{width:17px;height:17px;fill:currentColor;flex:none}
+  .btn.share.native{display:none}  /* unhidden by JS when navigator.share exists */
+  .share-sub{color:var(--muted);text-align:center;font-size:14px;margin-top:10px}
+
+  section{padding:34px 0}
+  h2{font-size:1.5rem;margin:0 0 6px;letter-spacing:-.01em}
+  .lead{color:var(--muted);margin:0 0 22px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+  .feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px}
+  .feat .ic{font-size:1.5rem}
+  .feat h3{margin:.5em 0 .25em;font-size:1.04rem}
+  .feat p{margin:0;color:var(--muted);font-size:14.5px}
+
+  table{width:100%;border-collapse:collapse;font-size:14.5px;overflow:hidden;
+    border:1px solid var(--line);border-radius:12px}
+  th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line)}
+  th{background:color-mix(in srgb,var(--fg) 5%,transparent);font-weight:600}
+  tr:last-child td{border-bottom:none}
+  td code{white-space:nowrap}
+
+  .callout{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:12px;padding:16px 18px;margin:22px 0 0}
+  .callout p{margin:0;color:var(--muted)} .callout strong{color:var(--fg)}
+
+  footer{padding:40px 0 60px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);
+    margin-top:30px;text-align:center}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="badge">Ninebot One E / E+ · BLE · Home Assistant</span>
+    <h1>A classic unicycle,<br><span class="grad">live in Home&nbsp;Assistant</span></h1>
+    <p class="sub">No phone. No vendor app. Battery, voltage, current, speed and odometer
+      polled straight off a Ninebot One over Bluetooth, through the ESPHome proxies you
+      already have — decoded by a small custom integration.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/jphein/ninebot-one">View on GitHub</a>
+      <a class="btn ghost" href="https://github.com/jphein/begode">Begode sibling →</a>
+      <a class="btn ghost" href="https://jphein.github.io/moyoung-watch/">MoYoung watch sibling →</a>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2>🔋 What you get</h2>
+    <p class="lead">One config-flow entry per wheel; every value lands as a proper HA entity
+      with device classes, so dashboards, statistics and automations just work.</p>
+    <div class="grid">
+      <div class="feat"><div class="ic">🔋</div><h3>Real battery %</h3>
+        <p>The wheel reports State of Charge directly — no voltage-curve guessing. Sticky
+        across restarts, retained while the wheel sleeps.</p></div>
+      <div class="feat"><div class="ic">⚡</div><h3>Voltage, current, power</h3>
+        <p>Pack voltage and signed current every 5 seconds, with power derived — negative
+        while charging or regenerating.</p></div>
+      <div class="feat"><div class="ic">🛞</div><h3>Speed &amp; odometer</h3>
+        <p>Live speed and lifetime distance as a <code>total_increasing</code> sensor, ready
+        for long-term statistics.</p></div>
+      <div class="feat"><div class="ic">🔌</div><h3>Charging that's honest</h3>
+        <p>Charging is detected from current draw <em>or</em> a rising battery % at
+        standstill — current alone fluctuates around zero on some chargers.</p></div>
+      <div class="feat"><div class="ic">📶</div><h3>Proxy-native</h3>
+        <p>Connects through any ESPHome bluetooth proxy with active connections. The wheel
+        reconnects automatically whenever it powers on in range.</p></div>
+      <div class="feat"><div class="ic">🎚️</div><h3>One-client switch</h3>
+        <p>A Ninebot accepts a single BLE client. A per-wheel “maintain connection” switch
+        releases it to the Ninebot app before a ride — automatable.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="protocol">
+  <div class="wrap">
+    <h2>🧪 The protocol, decoded</h2>
+    <p class="lead">Unlike Begode wheels (which free-stream), the Ninebot One answers polled
+      register reads on the classic serial-over-BLE bridge (service <code>FFE0</code>,
+      characteristic <code>FFE1</code>). Framing is shared in both directions:</p>
+<pre><code>55 AA &lt;len&gt; &lt;src&gt; &lt;dst&gt; &lt;param&gt; &lt;payload…&gt; &lt;crcL&gt; &lt;crcH&gt;
+
+len = payload_len + 2          src App = 0x09 · dst Controller = 0x01
+crc = (~sum(len … payload)) &amp; 0xFFFF, little-endian</code></pre>
+    <p class="lead" style="margin-top:18px">The integration asks for the serial number
+      (<code>0x10</code>) and firmware (<code>0x1A</code>) once, then polls live data
+      (<code>0xB0</code>) every 5&nbsp;s. Older firmware answers with one 32-byte block;
+      firmware 4.2.x answers in segmented register frames — both are parsed:</p>
+    <table>
+      <tr><th>Response</th><th>Fields</th><th>Scale</th></tr>
+      <tr><td><code>0xB0</code> (32-byte block)</td><td>battery, speed, distance, temp, voltage, current</td><td>legacy firmware</td></tr>
+      <tr><td><code>0xB3</code></td><td>battery %, speed</td><td>% · /1000 km/h</td></tr>
+      <tr><td><code>0xB6</code></td><td>total distance</td><td>u32 meters</td></tr>
+      <tr><td><code>0xB9</code></td><td>temperature</td><td>/10 °C</td></tr>
+      <tr><td><code>0xBC</code></td><td>voltage, current</td><td>/100 V · /100 A (signed)</td></tr>
+    </table>
+    <div class="callout">
+      <p><strong>Scope:</strong> the original One E/E+ generation only — no frame encryption,
+      no pairing dance. The Z / ES generations encrypt frames with a session key and need a
+      different handshake (not supported here). Protocol knowledge ported from the
+      <a href="https://github.com/Wheellog/Wheellog.Android">WheelLog</a> project (GPL-3.0),
+      with credit and thanks.</p>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>🚀 Install</h2>
+    <p class="lead">Plain custom component — no dependencies beyond HA's own Bluetooth stack.</p>
+<pre><code># 1. copy the integration into your HA config
+custom_components/ninebot_one/  →  /config/custom_components/ninebot_one/
+
+# 2. restart Home Assistant
+
+# 3. Settings → Devices &amp; Services → Add integration → "Ninebot One EUC"
+#    power the wheel on near a BLE proxy, pick it from the list, name it</code></pre>
+    <p class="lead" style="margin-top:14px">You'll need at least one
+      <a href="https://esphome.github.io/bluetooth-proxies/">ESPHome bluetooth proxy</a> with
+      <code>active: true</code> in range of the wheel (or a local Bluetooth adapter). Mind the
+      proxy's connection-slot budget if it also carries other devices — each proxy holds a
+      few active links (configurable up to 5 comfortably).</p>
+  </div>
+</section>
+
+<section id="share">
+  <div class="wrap">
+    <h2>📣 Share it</h2>
+    <div class="share-row">
+      <a class="btn share" target="_blank" rel="noopener"
+         href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fjphein.github.io%2Fninebot-one%2F">
+        <svg viewBox="0 0 24 24"><path d="M13.4 21v-8.2h2.7l.4-3.2h-3.1V7.6c0-.9.3-1.6 1.6-1.6h1.7V3.2c-.3 0-1.3-.2-2.5-.2-2.5 0-4.2 1.5-4.2 4.3v2.3H7.3v3.2H10V21h3.4z"/></svg>
+        Facebook</a>
+      <a class="btn share" target="_blank" rel="noopener"
+         href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fjphein.github.io%2Fninebot-one%2F&t=Show%20HN%3A%20A%20classic%20Ninebot%20One%20EUC%2C%20live%20in%20Home%20Assistant%20over%20BLE">
+        <svg viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm8.2 10.4L7.4 6.8h1.9l2.7 4.9 2.7-4.9h1.9l-3.8 6.6v4.6h-1.6v-4.6z"/></svg>
+        Hacker News</a>
+      <a class="btn share" target="_blank" rel="noopener"
+         href="https://www.reddit.com/submit?url=https%3A%2F%2Fjphein.github.io%2Fninebot-one%2F&title=A%20Ninebot%20One%20E%2B%20electric%20unicycle%20wired%20into%20Home%20Assistant%20%E2%80%94%20battery%2C%20voltage%20and%20odometer%20over%20BLE%20proxies%2C%20no%20phone%20app">
+        <svg viewBox="0 0 24 24"><path d="M14.5 4l1 3.6c1.6.1 3.1.6 4.2 1.4a2 2 0 112.2 3.3c.1.4.1.7.1 1.1 0 3.4-4 6.1-9 6.1s-9-2.7-9-6.1c0-.4 0-.7.1-1.1a2 2 0 112.2-3.3c1.2-.9 2.9-1.4 4.7-1.5l1.2-4.4 3.3.9zM9 12.8a1.3 1.3 0 100 2.6 1.3 1.3 0 000-2.6zm6 0a1.3 1.3 0 100 2.6 1.3 1.3 0 000-2.6zm-6.3 4.5c.9.7 2 1 3.3 1s2.4-.3 3.3-1l.7.8c-1.1.9-2.5 1.3-4 1.3s-2.9-.4-4-1.3l.7-.8z"/></svg>
+        Reddit</a>
+      <button class="btn share" onclick="copyThenOpen(this,'https://hackaday.com/submit-a-tip/')"
+              title="Copies the project link, then opens the Hackaday tips line — paste it there.">
+        <svg viewBox="0 0 24 24"><path d="M21.7 6.3l-3.1 3.1-3-.5-.5-3 3.1-3.1a5 5 0 00-6.5 6.5L4 17l-1 4 4-1 7.7-7.7a5 5 0 006.5-6.5l.5.5z"/></svg>
+        <span class="lbl">Hackaday tip</span></button>
+      <button class="btn share" onclick="copyOnly(this)"
+              title="Instagram has no web share — this copies the link to paste into a story or bio.">
+        <svg viewBox="0 0 24 24"><path d="M7.5 2h9A5.5 5.5 0 0122 7.5v9A5.5 5.5 0 0116.5 22h-9A5.5 5.5 0 012 16.5v-9A5.5 5.5 0 017.5 2zm0 2A3.5 3.5 0 004 7.5v9A3.5 3.5 0 007.5 20h9a3.5 3.5 0 003.5-3.5v-9A3.5 3.5 0 0016.5 4h-9zM12 7a5 5 0 110 10 5 5 0 010-10zm0 2a3 3 0 100 6 3 3 0 000-6zm5.3-3.1a1.1 1.1 0 110 2.2 1.1 1.1 0 010-2.2z"/></svg>
+        <span class="lbl">Instagram</span></button>
+      <button class="btn share native" onclick="nativeShare()">
+        <svg viewBox="0 0 24 24"><path d="M18 16a3 3 0 00-2.2 1L8.9 13a3 3 0 000-2l6.9-4a3 3 0 10-1-1.7L7.9 9.2a3 3 0 100 5.6l6.9 3.9A3 3 0 1018 16z"/></svg>
+        Share…</button>
+    </div>
+    <p class="share-sub">The Instagram button copies the link (paste it in a story or bio); the Hackaday
+      button copies it and opens their tips line. On a phone, <em>Share…</em> opens your native share sheet.</p>
+  </div>
+</section>
+
+<script>
+const SHARE_URL = "https://jphein.github.io/ninebot-one/";
+function flash(btn, txt){
+  const l = btn.querySelector(".lbl") || btn; const old = l.textContent;
+  l.textContent = txt; setTimeout(()=>{ l.textContent = old; }, 1800);
+}
+function copyOnly(btn){ navigator.clipboard.writeText(SHARE_URL).then(()=>flash(btn,"Copied ✓")); }
+function copyThenOpen(btn, url){
+  navigator.clipboard.writeText(SHARE_URL).then(()=>{ flash(btn,"Link copied ✓"); window.open(url,"_blank","noopener"); });
+}
+function nativeShare(){
+  navigator.share({ title:"Ninebot One — live in Home Assistant",
+    text:"A Ninebot One E+ electric unicycle wired into Home Assistant — battery, voltage and odometer over BLE proxies, no phone app.",
+    url:SHARE_URL }).catch(()=>{});
+}
+if (navigator.share) document.querySelector(".btn.share.native").style.display = "inline-flex";
+</script>
+
+<footer>
+  <div class="wrap">
+    <p>GPL-3.0 licensed — the decoder is a port of
+      <a href="https://github.com/Wheellog/Wheellog.Android">WheelLog</a>'s NinebotAdapter,
+      with credit and thanks to its contributors.<br>
+      Siblings: <a href="https://github.com/jphein/begode">begode</a> (Begode/Gotway EUCs) ·
+      <a href="https://jphein.github.io/moyoung-watch/">moyoung-watch</a> ·
+      <a href="https://jphein.github.io/smol/">smol</a><br>
+      Not affiliated with Ninebot, Segway, or Home Assistant.</p>
+  </div>
+</footer>
+
+</body>
+</html>
