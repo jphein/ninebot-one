@@ -56,6 +56,6 @@ python3 -m pytest tests/
 
 ## License
 
-**GPL-3.0** (see LICENSE): `protocol.py` derives from WheelLog's
-`NinebotAdapter` ([Wheellog/Wheellog.Android](https://github.com/Wheellog/Wheellog.Android),
-GPL-3.0). Credit and thanks to the WheelLog contributors.
+AGPL-3.0-or-later © 2026 Jeffrey Pine Hein. See [LICENSE](LICENSE).
+
+`custom_components/ninebot_one/protocol.py` derives from WheelLog's `NinebotAdapter` ([Wheellog/Wheellog.Android](https://github.com/Wheellog/Wheellog.Android), GPL-3.0) and keeps that license; GPL-3.0 §13 permits combining it with AGPL-3.0. Credit and thanks to the WheelLog contributors.
